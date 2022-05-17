@@ -32,7 +32,10 @@ pub struct ArtNft {
   pub symbol: String, //4 + len
   pub uri: String, //4 + len
   pub resale_fee: u16, // 2
+  // TODO: Add initial_sale boolean;
+  pub initial_sale: bool,
   pub royalties: Option<Vec<Royalty>>, // 1 + 4 + (Royaty * len)
+  // TODO: add Collection pubkey;
 }
 
 impl MetadataData for ArtNft {
@@ -44,6 +47,7 @@ impl MetadataData for ArtNft {
     + 4 // uri string size buffer
     + self.uri.len()
     + 2 // resale fee
+    + 1 // initial sale boolean
     + 1; // Royalty Option buffer
 
     return match &self.royalties {
@@ -121,12 +125,12 @@ where
   }
   pub fn size(&self) -> usize {
     let size = 
-        1 // u8 for kind pub
+        1 // u8 for kind enum
       + 32 // pubkey mint
       + 1 // u8 for modifiable bool
-      + 1 // u8 for update type bool
+      + 1 // u8 for update type enum
       + self.data.size()
-      + 1; // Update Authorisy Option
+      + 1; // Update Authority Option
 
     return match self.update_authority {
       None => {

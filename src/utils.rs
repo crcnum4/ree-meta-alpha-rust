@@ -21,3 +21,29 @@ pub fn assert_initialized<T: Pack + IsInitialized> (
       Ok(account)
   }
 }
+
+pub fn assert_valid_mint_authority(
+  mint_authority: &COption<Pubkey>,
+  mint_authority_info: &AccountInfo
+) -> ProgramResult {
+  match mint_authority {
+      COption::None => {
+          return Err(ReeMetaError::InvalidMintAuthority.into())
+      }
+      COption::Some(key) => {
+          if mint_authority_info.key != key {
+              return Err(ReeMetaError::InvalidMintAuthority.into())
+          } else {
+              return Ok(())
+          }
+      }
+  }
+}
+
+pub fn assert_owned_by(account: &AccountInfo, owner: &Pubkey) -> ProgramResult {
+  if account.owner != owner {
+      Err(ReeMetaError::IncorrectOwner.into())
+  } else {
+      Ok(())
+  }
+}

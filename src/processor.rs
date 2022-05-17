@@ -15,7 +15,9 @@ use crate::{
     UpdateType
   },
   utils::{
-    assert_initialized
+    assert_initialized,
+    assert_valid_mint_authority,
+    assert_owned_by,
   }
 };
 use borsh::BorshSerialize;
@@ -29,7 +31,8 @@ use solana_program::{
   pubkey::Pubkey,
   system_instruction,
   sysvar::{rent::Rent, Sysvar},
-  clock
+  clock,
+  program_pack::{IsInitialized, Pack}
 };
 
 use spl_token::{
@@ -53,7 +56,13 @@ impl Processor {
           program_id,
           accounts,
           args.metadata,
-          args.arr_data,
+          args.aar_data,
+        )
+      },
+      ReeMetadataInstruction::MintNFT() => {
+        process_mint_nft(
+          program_id,
+          accounts,
         )
       }
     }
@@ -89,11 +98,12 @@ pub fn process_create_metadata (
     verified: true
   };
     
-  let mut artNft: ArtNft = ArtNft{
+  let artNft: ArtNft = ArtNft{
     name: aar_data.name,
     symbol: aar_data.symbol,
     uri: aar_data.uri,
     resale_fee: aar_data.resale_fee,
+    initial_sale: false,
     royalties: Some(vec![genesis_royalty]),
   };
 
@@ -171,6 +181,64 @@ pub fn process_create_metadata (
 
   msg!("write data to account");
   metadata.serialize(&mut *metadata_acount_info.data.borrow_mut())?;
+
+  Ok(())
+}
+
+pub fn process_mint_nft(
+  program_id: &Pubkey,
+  accounts: &[AccountInfo],
+) -> ProgramResult {
+  let account_iter = &mut accounts.iter();
+  let mint_account_info = next_account_info(account_iter)?;
+  let authority_account_info = next_account_info(account_iter)?;
+  let recipient_token_account_info = next_account_info(account_iter)?;
+  let token_program_info = next_account_info(account_iter)?;
+
+  let mint: Mint = assert_initialized(mint_account_info)?;
+
+  let recipient_token_account: TokenAccount = assert_initialized(recipient_token_account_info)?;
+
+  assert_valid_mint_authority(&mint.mint_authority, &authority_account_info)?;
+
+  assert_owned_by(mint_account_info, &spl_token::id())?;
+  assert_owned_by(recipient_token_account_info, &spl_token::id())?;
+
+  if recipient_token_account.mint != *mint_account_info.key {
+    return Err(ReeMetaError::InvalidInstruction.into())
+  }
+
+  // mint the token then remove the mint authority from the mint.__rust_force_expr!
+  invoke(
+    &spl_token::instruction::mint_to(
+      token_program_info.key, 
+      mint_account_info.key, 
+      recipient_token_account_info.key, 
+      authority_account_info.key, 
+      &[authority_account_info.key], 
+      1
+    )?,
+    &[
+      mint_account_info.clone(),
+      recipient_token_account_info.clone(),
+      authority_account_info.clone(),
+    ]
+  )?;
+
+  invoke(
+    &spl_token::instruction::set_authority(
+      token_program_info.key, 
+      mint_account_info.key, 
+      None, 
+      spl_token::instruction::AuthorityType::MintTokens, 
+      authority_account_info.key, 
+      &[authority_account_info.key]
+    )?,
+    &[
+      mint_account_info.clone(),
+      authority_account_info.clone(),
+    ]
+  )?;
 
   Ok(())
 }

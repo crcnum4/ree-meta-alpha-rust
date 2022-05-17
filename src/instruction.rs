@@ -35,7 +35,7 @@ pub struct MetadataArgsAAR {
 #[derive(PartialEq, Debug, Clone)]
 pub struct CreateMetadataArgs {
   pub metadata: MetadataArgs,
-  pub arr_data: MetadataArgsAAR,
+  pub aar_data: MetadataArgsAAR,
 }
 
 #[repr(C)]
@@ -84,7 +84,6 @@ impl ReeMetadataInstruction {
     let name_len = name_len_chunk.try_into().ok()
       .map(u32::from_le_bytes).ok_or(InvalidInstruction)? as usize;
     msg!("got {}", name_len);
-
     let (name_chunk, rest) = rest.split_at(name_len);
     let name = match name_chunk.try_into().ok()
       .map(String::from_utf8).ok_or(InvalidInstruction)? {
@@ -116,7 +115,8 @@ impl ReeMetadataInstruction {
       };
     msg!("got {}", uri);
     
-    let resale_fee = rest.try_into().ok().map(u16::from_le_bytes).ok_or(InvalidInstruction)?;
+    let resale_fee = rest.try_into().ok()
+      .map(u16::from_le_bytes).ok_or(InvalidInstruction)?;
 
     msg!("create aar");
     let aar = MetadataArgsAAR{
@@ -126,6 +126,6 @@ impl ReeMetadataInstruction {
       resale_fee: resale_fee,
     };
 
-    Ok(CreateMetadataArgs{metadata: metadata, arr_data: aar})
+    Ok(CreateMetadataArgs{metadata: metadata, aar_data: aar})
   }
 }

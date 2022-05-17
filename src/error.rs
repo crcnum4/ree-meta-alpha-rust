@@ -13,6 +13,10 @@ pub enum ReeMetaError {
   InvalidInstruction,
   #[error("Uninitialized")]
   Uninitialized,
+  #[error("invalid Mint authority")]
+  InvalidMintAuthority,
+  #[error("Invalid ownership")]
+  IncorrectOwner,
 }
 
 impl PrintProgramError for ReeMetaError {

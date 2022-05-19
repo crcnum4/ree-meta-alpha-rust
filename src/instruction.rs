@@ -52,7 +52,14 @@ pub enum ReeMetadataInstruction {
    * #[account(6), name="system_program", desc="System Program"]
    * #[account(7), name="rent", "Rent info"]
    */
-  CreateMetaData(CreateMetadataArgs)
+  CreateMetaData(CreateMetadataArgs),
+  /* Mint one token of the given NFT and close the mint
+   * #[account(0), writable, name="mint", desc="Mint of the NFT"]
+   * #[account(1), signer, name="Mint_authority", desc="Mint authority and payer"] 
+   * #[account(2), writable, name=recipient_ta", desc="Recipient token account"]
+   * #[account(4), name="token_program", desc="token program"]
+   */
+  MintNFT(),
 }
 
 impl ReeMetadataInstruction {
@@ -60,6 +67,7 @@ impl ReeMetadataInstruction {
     let (tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
     Ok( match tag {
       0 => Self::CreateMetaData(Self::unpack_create_metadata_args(rest)?),
+      1 => Self::MintNFT(),
       _ => return Err(InvalidInstruction.into())
     })
   }

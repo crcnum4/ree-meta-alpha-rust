@@ -208,7 +208,7 @@ pub fn process_mint_nft(
     return Err(ReeMetaError::InvalidInstruction.into())
   }
 
-  // mint the token then remove the mint authority from the mint.__rust_force_expr!
+  // mint the token then remove the mint authority from the mint.
   invoke(
     &spl_token::instruction::mint_to(
       token_program_info.key, 

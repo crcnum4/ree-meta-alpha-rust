@@ -1,6 +1,6 @@
 [package]
-name = "minter-prime"
-version = "0.1.0"
+name = "REE-NFT-Meta"
+version = "0.1.1"
 edition = "2021"
 license = "WTFPL"
 publish = false

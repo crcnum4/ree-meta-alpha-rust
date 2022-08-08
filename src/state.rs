@@ -3,9 +3,11 @@ use solana_program::{
   account_info::AccountInfo,
   program_error::ProgramError,
   pubkey::Pubkey,
-  msg
+  msg, stake::state::Meta
 };
 use borsh::{BorshDeserialize, BorshSerialize};
+use std::collections::HashMap;
+use core::any::Any;
 
 pub const PREFIX: &str = "ree-metadata";
 
@@ -16,13 +18,25 @@ pub trait MetadataData {
 #[repr(C)]
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug, Clone)]
 pub struct Royalty {
-  pub address: Pubkey, // 32
+  pub address: Pubkey,
   pub share: u16, // 2
   pub verified: bool // 1
 }
 
 impl Royalty {
-  pub fn size() -> usize {35}
+  pub fn size() -> usize {3 + 32}
+}
+
+#[repr(C)]
+#[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug, Clone)]
+pub struct CustomNft {
+  pub data: Vec<u8>
+}
+
+impl MetadataData for CustomNft {
+  fn size(&self) -> usize {
+    return 4 + self.data.len()
+  }
 }
 
 #[repr(C)]
@@ -32,15 +46,14 @@ pub struct ArtNft {
   pub symbol: String, //4 + len
   pub uri: String, //4 + len
   pub resale_fee: u16, // 2
-  // TODO: Add initial_sale boolean;
   pub initial_sale: bool,
-  pub royalties: Option<Vec<Royalty>>, // 1 + 4 + (Royaty * len)
-  // TODO: add Collection pubkey;
+  pub collection: Option<Pubkey>,
+  pub royalties: Vec<Royalty>, // 1 + 4 + (Royaty * len)
 }
 
 impl MetadataData for ArtNft {
   fn size(&self) -> usize {
-    let size = 4 // name string size buffer
+    let mut size = 4 // name string size buffer
     + self.name.len()
     + 4 // symbol string size buffer
     + self.symbol.len()
@@ -48,21 +61,21 @@ impl MetadataData for ArtNft {
     + self.uri.len()
     + 2 // resale fee
     + 1 // initial sale boolean
-    + 1; // Royalty Option buffer
+    + 1; // collection Option buffer
 
-    return match &self.royalties {
-      None => {
-        size
-      },
-      Some(royalties) => {
-        size + 4 + royalties.len() * Royalty::size()
-      }
-    }
+    size += match &self.collection {
+      Some(_) => 32,
+      None => 0
+    };
+
+    size += 4 + Royalty::size() * self.royalties.len();
+
+    return size;
   }
 }
 
 impl ArtNft {
-  pub fn from_account_data(data: &[u8]) -> Result<ArtNft, ProgramError> {
+  pub fn from_slice(data: &[u8]) -> Result<ArtNft, ProgramError> {
     let an: ArtNft = try_from_slice_unchecked(data)?;
     Ok(an)
   }
@@ -111,6 +124,7 @@ pub struct Metadata<
   pub mint: Pubkey,
   pub is_modifiable: bool,
   pub update_type: UpdateType,
+  pub collection: Option<Pubkey>,
   pub update_authority: Option<Pubkey>,
   pub data: T,
 }
@@ -120,23 +134,37 @@ where
   T: MetadataData + BorshDeserialize + BorshSerialize + PartialEq + Clone
 {
   pub fn from_account_info(account_info: &AccountInfo) -> Result<Metadata<T>, ProgramError> {
-    let md: Metadata<T> = try_from_slice_unchecked(&account_info.data.borrow_mut())?;
+    let mut data = &account_info.data.borrow_mut();
+    let md: Metadata<T> = try_from_slice_unchecked(data)?;
     Ok(md)
   }
+
+  pub fn get_kind(account_info: &AccountInfo) -> Result<Kind, ProgramError> {
+    let mut data = &account_info.data.borrow_mut();
+    Ok(Kind::from(&data[0]))
+  }
+  
   pub fn size(&self) -> usize {
-    let size = 
+    let mut size = 
         1 // u8 for kind enum
       + 32 // pubkey mint
       + 1 // u8 for modifiable bool
       + 1 // u8 for update type enum
       + self.data.size()
-      + 1; // Update Authority Option
+      + 1; // collection optional buffer;
+    
+    size += match self.collection {
+      None => 0,
+      Some(_) => 32,
+    };
+      
+    size += 1; // Update Authority Optional buffer;
 
     return match self.update_authority {
       None => {
         size
       }
-      Some (auth) => {
+      Some (_) => {
         size + 32 // pubkey of the authority
       }
     }

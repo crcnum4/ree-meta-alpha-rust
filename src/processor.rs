@@ -3,12 +3,14 @@ use crate::{
   instruction::{
     CreateMetadataArgs,
     MetadataArgs,
-    MetadataArgsAAR,
-    ReeMetadataInstruction
+    MetadataArgsRRA,
+    ReeMetadataInstruction,
+    AddRoyaltyArgs,
   },
   state::{
     Metadata,
     ArtNft,
+    CustomNft,
     Royalty,
     PREFIX,
     Kind,
@@ -18,21 +20,22 @@ use crate::{
     assert_initialized,
     assert_valid_mint_authority,
     assert_owned_by,
-  }
+  },
+  artNft,
+  customNft
 };
 use borsh::BorshSerialize;
+use std::collections::HashMap;
 
 use solana_program::{
   account_info::{next_account_info, AccountInfo},
-  instruction::{AccountMeta},
   entrypoint::ProgramResult,
   msg,
   program::{invoke, invoke_signed},
   pubkey::Pubkey,
   system_instruction,
-  sysvar::{rent::Rent, Sysvar},
-  clock,
-  program_pack::{IsInitialized, Pack}
+  sysvar::{rent::{Rent, ID as RENT_ID}, Sysvar},
+  system_program, 
 };
 
 use spl_token::{
@@ -47,7 +50,7 @@ impl Processor {
     accounts: &[AccountInfo],
     input: &[u8],
   ) -> ProgramResult {
-    msg!("get instruction");
+    msg!("REEMETA Instruction");
     let instruction = ReeMetadataInstruction::unpack(input)?;
     match instruction {
       ReeMetadataInstruction::CreateMetaData(args) => {
@@ -60,10 +63,13 @@ impl Processor {
         )
       },
       ReeMetadataInstruction::MintNFT() => {
-        process_mint_nft(
-          program_id,
-          accounts,
-        )
+        process_mint_nft(program_id, accounts)
+      },
+      ReeMetadataInstruction::LockNFT() => {
+        process_lock_nft(program_id, accounts)
+      },
+      ReeMetadataInstruction::AddRoyalty(args) => {
+        process_add_royalty(program_id, accounts, args)
       }
     }
   }
@@ -73,13 +79,15 @@ pub fn process_create_metadata (
   program_id: &Pubkey,
   accounts: &[AccountInfo],
   metadata_data: MetadataArgs,
-  aar_data: MetadataArgsAAR,
+  aar_data: MetadataArgsRRA,
 ) -> ProgramResult {
+  msg!("Get accounts");
   let account_iter = &mut accounts.iter();
   let metadata_acount_info = next_account_info(account_iter)?;
   let mint_account_info = next_account_info(account_iter)?;
   let royalty_owner_account_info = next_account_info(account_iter)?;
   let mint_authority_account_info = next_account_info(account_iter)?;
+  let new_mint_authority_account_info = next_account_info(account_iter)?;
   let payer_account_info = next_account_info(account_iter)?;
   let update_authority: Option<&AccountInfo> = match metadata_data.update_type {
     UpdateType::None => {
@@ -89,22 +97,39 @@ pub fn process_create_metadata (
       Some(next_account_info(account_iter)?)
     }
   };
-  let system_account_info = next_account_info(account_iter)?;
+  let system_info = next_account_info(account_iter)?;
   let rent_info = next_account_info(account_iter)?;
+  let token_info = next_account_info(account_iter)?;
+
+  msg!("verify system accounts");
+  if *system_info.key != system_program::ID
+    || *rent_info.key != RENT_ID
+    || *token_info.key != spl_token::ID
+  {
+    msg!("invalid system accounts");
+    return Err(ReeMetaError::InvalidInstruction.into())
+  }
+
+  msg!("assert mint is a token program mint");
+  assert_owned_by(mint_account_info, token_info.key)?;
 
   let genesis_royalty = Royalty{
-    address: *royalty_owner_account_info.key, 
+    address: *royalty_owner_account_info.key,
     share: 100, 
     verified: true
   };
+
+  let mut royalties: Vec<Royalty> = Vec::<Royalty>::new();
+  royalties.push(genesis_royalty);
     
-  let artNft: ArtNft = ArtNft{
+  let art_nft: ArtNft = ArtNft{
     name: aar_data.name,
     symbol: aar_data.symbol,
     uri: aar_data.uri,
     resale_fee: aar_data.resale_fee,
     initial_sale: false,
-    royalties: Some(vec![genesis_royalty]),
+    collection: None,
+    royalties: royalties,
   };
 
   let metadata_seeds = &[
@@ -122,20 +147,26 @@ pub fn process_create_metadata (
     &[metadata_bump_seed]
   ];
 
+  if metadata_key != *metadata_acount_info.key {
+    msg!("Invalid PDA");
+    return Err(ReeMetaError::InvalidInstruction.into())
+  }
+
+  msg!("build Metadata");
   let metadata: Metadata<ArtNft> = Metadata{
     kind: metadata_data.kind,
     mint: *mint_account_info.key,
-    data: artNft,
+    data: art_nft,
     is_modifiable: metadata_data.is_modifiable,
     update_type: metadata_data.update_type,
+    collection: None,
     update_authority: match update_authority {
       None => None,
       Some(account_info) => Some(*account_info.key),
     }
   };
 
-  msg!("Metadata size is: {}", metadata.size());
-
+  msg!("Rent");
   let rent = &Rent::from_account_info(rent_info)?;
 
   let required_lamports = rent
@@ -154,14 +185,14 @@ pub fn process_create_metadata (
       &[
         payer_account_info.clone(),
         metadata_acount_info.clone(),
-        system_account_info.clone(),
+        system_info.clone(),
       ]
     )?;
   }
 
   let accounts = &[
     metadata_acount_info.clone(),
-    system_account_info.clone(),
+    system_info.clone(),
   ];
 
   msg!("allocate and assign");
@@ -178,6 +209,23 @@ pub fn process_create_metadata (
     accounts, 
     &[metadata_authority_seeds]
   )?;
+
+  if *mint_authority_account_info.key != *new_mint_authority_account_info.key {
+    invoke(
+      &spl_token::instruction::set_authority(
+        token_info.key, 
+        mint_account_info.key, 
+        Some(new_mint_authority_account_info.key), 
+        spl_token::instruction::AuthorityType::MintTokens, 
+        mint_authority_account_info.key, 
+        &[mint_authority_account_info.key]
+      )?, 
+      &[
+        mint_account_info.clone(),
+        mint_authority_account_info.clone(),
+      ]
+    )?;
+  }
 
   msg!("write data to account");
   metadata.serialize(&mut *metadata_acount_info.data.borrow_mut())?;
@@ -241,4 +289,60 @@ pub fn process_mint_nft(
   )?;
 
   Ok(())
+}
+
+pub fn process_lock_nft (
+  program_id: &Pubkey,
+  accounts: &[AccountInfo],
+) -> ProgramResult {
+  let account_iter = &mut accounts.iter();
+  let metadata_account_info = next_account_info(account_iter)?;
+  let _payer_account_info = next_account_info(account_iter)?;
+  let update_authority_account_info = next_account_info(account_iter)?;
+
+  assert_owned_by(metadata_account_info, program_id)?;
+
+  let kind = Metadata::<ArtNft>::get_kind(metadata_account_info)?;
+
+  match kind {
+    Kind::RoyaltiyResaleArt => {
+      artNft::lock_nft(
+        Metadata::<ArtNft>::from_account_info(metadata_account_info)?, 
+        metadata_account_info, 
+        update_authority_account_info
+      )
+    },
+    Kind::Uninitialized => {
+      customNft::lock_nft(
+        Metadata::<CustomNft>::from_account_info(metadata_account_info)?,
+        metadata_account_info, 
+        update_authority_account_info
+      )
+    } 
+  }
+}
+
+pub fn process_add_royalty (
+  program_id: &Pubkey,
+  accounts: &[AccountInfo],
+  data: AddRoyaltyArgs,
+) -> ProgramResult {
+  let account_iter = &mut accounts.iter();
+  let metadata_account_info = next_account_info(account_iter)?;
+
+  assert_owned_by(metadata_account_info, program_id)?;
+
+  match Metadata::<ArtNft>::get_kind(metadata_account_info)? {
+    Kind::RoyaltiyResaleArt => artNft::add_royalty(
+      program_id, 
+      accounts, 
+      Metadata::<ArtNft>::from_account_info(metadata_account_info)?, 
+      data
+    ),
+    Kind::Uninitialized => {
+      msg!("This NFT Kind has no royalties");
+      return Err(ReeMetaError::InvalidNFTKind.into())
+    }
+  }
+
 }

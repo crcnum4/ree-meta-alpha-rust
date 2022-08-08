@@ -17,6 +17,18 @@ pub enum ReeMetaError {
   InvalidMintAuthority,
   #[error("Invalid ownership")]
   IncorrectOwner,
+  #[error("Invalid Kind")]
+  InvalidNFTKind,
+  #[error("No Update Authority")]
+  NoUpdateAuthority,
+  #[error("invalid update authority")]
+  InvalidUpdateAuthority,
+  #[error("Already Locked")]
+  AlreadyLocked,
+  #[error("No Royalty System")]
+  NoRoyalties,
+  #[error("Insufficient Share")]
+  InsufficientShare,
 }
 
 impl PrintProgramError for ReeMetaError {

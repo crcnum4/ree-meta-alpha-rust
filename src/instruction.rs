@@ -10,11 +10,12 @@ use std::str;
 
 use crate::{
   error::ReeMetaError::InvalidInstruction,
-  state::{Kind, UpdateType}
+  state::{Kind, UpdateType},
+  unpack::unpack_string,
 };
 
 #[repr(C)]
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, BorshSerialize)]
 pub struct MetadataArgs {
   pub kind: Kind,
   pub is_modifiable: bool,
@@ -23,8 +24,8 @@ pub struct MetadataArgs {
 
 // TODO: update to MetadataArgsRRA ResaleRoyaltyArt
 #[repr(C)]
-#[derive(PartialEq, Debug, Clone)]
-pub struct MetadataArgsAAR {
+#[derive(PartialEq, Debug, Clone, BorshSerialize)]
+pub struct MetadataArgsRRA {
   pub name: String,
   pub symbol: String,
   pub uri: String,
@@ -32,25 +33,33 @@ pub struct MetadataArgsAAR {
 }
 
 #[repr(C)]
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, BorshSerialize)]
 pub struct CreateMetadataArgs {
   pub metadata: MetadataArgs,
-  pub aar_data: MetadataArgsAAR,
+  pub aar_data: MetadataArgsRRA,
 }
 
 #[repr(C)]
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, BorshSerialize)]
+pub struct AddRoyaltyArgs {
+  pub share: u16,
+}
+
+#[repr(C)]
+#[derive(PartialEq, Debug, Clone, BorshSerialize)]
 pub enum ReeMetadataInstruction {
-  /* Create Metadata account
+  /* Create ArtNFT Metadata account
    * creates the metadata account data giving ownership to program and setting details
    * #[account(0), writable, name="metadata_account", desc="PDA of the new metadata account"]
    * #[account(1), writable, name="mint", desc="Mint of the token asset"]
    * #[account(2), name="royalty_owner", desc="Original royalty holder that starts with 100% of the shares"]
-   * #[account(3), signer, name="mint_authority", desc="Mint authority of the mint"]
-   * #[account(4), writable & signer, name="payer", desc="Payer of the transaction"]
-   * #[account(5), optional, name="update_authority", desc="if the metadata is mutable then this needs to be either the wallet of the updater or an NFT wallet" ]
-   * #[account(6), name="system_program", desc="System Program"]
-   * #[account(7), name="rent", "Rent info"]
+   * #[account(3), signer, name="created_mint_authority", desc="Mint authority of the mint"]
+   * #[account(4), read, name="nft_mint_authority", desc="Pubkey of who can mint the 1 nft"]
+   * #[account(5), writable & signer, name="payer", desc="Payer of the transaction"]
+   * #[account(6), optional, name="update_authority", desc="if the metadata is mutable then this needs to be either the wallet of the updater or an NFT wallet" ]
+   * #[account(7), name="system_program", desc="System Program"]
+   * #[account(8), name="rent", "Rent info"]
+   * #[account(9), name="token_program", desc="Token Program"]
    */
   CreateMetaData(CreateMetadataArgs),
   /* Mint one token of the given NFT and close the mint
@@ -60,6 +69,25 @@ pub enum ReeMetadataInstruction {
    * #[account(4), name="token_program", desc="token program"]
    */
   MintNFT(),
+  /* Lock metadata
+   * lock the metadata from any further changes other then Initial Sale
+   * #[account(0), writable, name='metadata', desc="PDA of the NFT metadata"]
+   * #[account(1), signer & writable, name="payer", desc="transaction payer"]
+   * #[account(2), signer, name="update_authority", desc-"update authority of the NFT"]
+   */
+  LockNFT(),
+  /* Add Royalty to ArtNFT
+   * can add a Royalty to the ArtNFT Royalty list. Will take Share from the 
+   * Royalty in position 0, NFT must me modifiable.
+   * #[account(0), writable, name="metadata", desc="PDA of the NFT metadata"]
+   * #[account(1), signer & writable, name="payer", desc="Transaction & Rent Payer" ]
+   * #[account(2), signer, name="update_authority", desc="update authority of the NFT"]
+   * #[account(3), read, name="new_royalty", desc="pubkey of royalty to add"]
+   * #[account(4), read, name="system_program"]
+   * #[account(5), read, name="rent_program"]
+   */
+  AddRoyalty(AddRoyaltyArgs),
+
 }
 
 impl ReeMetadataInstruction {
@@ -68,6 +96,8 @@ impl ReeMetadataInstruction {
     Ok( match tag {
       0 => Self::CreateMetaData(Self::unpack_create_metadata_args(rest)?),
       1 => Self::MintNFT(),
+      2 => Self::LockNFT(),
+      3 => Self::AddRoyalty(Self::unpack_add_royalty_args(rest)?),
       _ => return Err(InvalidInstruction.into())
     })
   }
@@ -75,9 +105,7 @@ impl ReeMetadataInstruction {
   fn unpack_create_metadata_args(data: &[u8]) -> Result<CreateMetadataArgs, ProgramError> {
     msg!("get kind");
     let (kind_u8, rest) = data.split_first().ok_or(InvalidInstruction)?;
-    msg!("got {}, getting modifiable", kind_u8);
     let (modifiable, rest) = rest.split_first().ok_or(InvalidInstruction)?;
-    msg!("got {}, getting update type");
     let (update_type_u8, rest) = rest.split_first().ok_or(InvalidInstruction)?;
 
     msg!("setting metadata");
@@ -86,48 +114,19 @@ impl ReeMetadataInstruction {
       is_modifiable: *modifiable != 0,
       update_type: update_type_u8.into(),
     };
-
-    msg!("get name length");
-    let (name_len_chunk, rest) = rest.split_at(4);
-    let name_len = name_len_chunk.try_into().ok()
-      .map(u32::from_le_bytes).ok_or(InvalidInstruction)? as usize;
-    msg!("got {}", name_len);
-    let (name_chunk, rest) = rest.split_at(name_len);
-    let name = match name_chunk.try_into().ok()
-      .map(String::from_utf8).ok_or(InvalidInstruction)? {
-        Ok(n) => n,
-        _ => return Err(InvalidInstruction.into())
-      };
-    msg!("got {}", name);
-
-    msg!("get Symbol length");
-    let (symbol_len_chunk, rest) = rest.split_at(4);
-    let symbol_len = symbol_len_chunk.try_into().ok()
-      .map(u32::from_le_bytes).ok_or(InvalidInstruction)? as usize;
-    let (symbol_chunk, rest) = rest.split_at(symbol_len);
-    let symbol = match symbol_chunk.try_into().ok()
-      .map(String::from_utf8).ok_or(InvalidInstruction)? {
-        Ok(n) => n,
-        _ => return Err(InvalidInstruction.into())
-      };
-    msg!("got {}", symbol);
-    
-    let (uri_len_chunk, rest) = rest.split_at(4);
-    let uri_len = uri_len_chunk.try_into().ok()
-      .map(u32::from_le_bytes).ok_or(InvalidInstruction)? as usize;
-    let (uri_chunk, rest) = rest.split_at(uri_len);
-    let uri = match uri_chunk.try_into().ok()
-      .map(String::from_utf8).ok_or(InvalidInstruction)? {
-        Ok(n) => n,
-        _ => return Err(InvalidInstruction.into())
-      };
-    msg!("got {}", uri);
-    
+    msg!("get Name");
+    let (name, rest) = unpack_string(rest).ok_or(InvalidInstruction)?;
+    msg!("get symbol");
+    let (symbol, rest) = unpack_string(rest).ok_or(InvalidInstruction)?;
+    //get uri
+    msg!("get uri");
+    let (uri, rest) = unpack_string(rest).ok_or(InvalidInstruction)?;
+    msg!("get resale");
     let resale_fee = rest.try_into().ok()
       .map(u16::from_le_bytes).ok_or(InvalidInstruction)?;
-
+    
     msg!("create aar");
-    let aar = MetadataArgsAAR{
+    let aar = MetadataArgsRRA{
       name: name,
       symbol: symbol,
       uri: uri,
@@ -135,5 +134,30 @@ impl ReeMetadataInstruction {
     };
 
     Ok(CreateMetadataArgs{metadata: metadata, aar_data: aar})
+  }
+
+  fn unpack_add_royalty_args(data: &[u8]) -> Result<AddRoyaltyArgs, ProgramError> {
+    let share = data.try_into().ok()
+      .map(u16::from_le_bytes).ok_or(InvalidInstruction)?;
+    Ok(AddRoyaltyArgs{share})
+  }
+}
+
+pub fn mint_nft(
+  program_id: &Pubkey,
+  token_program: &Pubkey,
+  metadata_pda: &Pubkey,
+  mint_authority: &Pubkey,
+  recipient: &Pubkey,
+) -> Instruction {
+  Instruction { 
+    program_id: *program_id, 
+    accounts: vec![
+      AccountMeta::new(*metadata_pda, false),
+      AccountMeta::new_readonly(*mint_authority, true),
+      AccountMeta::new(*recipient, false),
+      AccountMeta::new(*token_program, false)
+    ], 
+    data: ReeMetadataInstruction::MintNFT().try_to_vec().unwrap() 
   }
 }

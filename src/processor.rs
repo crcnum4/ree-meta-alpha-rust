@@ -1,11 +1,10 @@
 use crate::{
   error::ReeMetaError,
   instruction::{
-    CreateMetadataArgs,
     MetadataArgs,
     MetadataArgsRRA,
     ReeMetadataInstruction,
-    AddRoyaltyArgs,
+    AddRoyaltyArgs, NftTransactionArgs,
   },
   state::{
     Metadata,
@@ -25,7 +24,6 @@ use crate::{
   customNft
 };
 use borsh::BorshSerialize;
-use std::collections::HashMap;
 
 use solana_program::{
   account_info::{next_account_info, AccountInfo},
@@ -41,7 +39,6 @@ use solana_program::{
 use spl_token::{
   state::{Mint, Account as TokenAccount}
 };
-use percentage::Percentage;
 
 pub struct Processor;
 impl Processor {
@@ -70,6 +67,9 @@ impl Processor {
       },
       ReeMetadataInstruction::AddRoyalty(args) => {
         process_add_royalty(program_id, accounts, args)
+      },
+      ReeMetadataInstruction::NftTransaction(args) => {
+        process_nft_transaction(program_id, accounts, args)
       }
     }
   }
@@ -153,7 +153,8 @@ pub fn process_create_metadata (
   }
 
   msg!("build Metadata");
-  let metadata: Metadata<ArtNft> = Metadata{
+
+  let mut metadata: Metadata<ArtNft> = Metadata{
     kind: metadata_data.kind,
     mint: *mint_account_info.key,
     data: art_nft,
@@ -163,8 +164,13 @@ pub fn process_create_metadata (
     update_authority: match update_authority {
       None => None,
       Some(account_info) => Some(*account_info.key),
-    }
+    },
   };
+
+  if metadata_data.in_collection {
+    let collection_account_info = next_account_info(account_iter)?;
+    metadata.collection = Some(*collection_account_info.key);
+  }
 
   msg!("Rent");
   let rent = &Rent::from_account_info(rent_info)?;
@@ -234,7 +240,7 @@ pub fn process_create_metadata (
 }
 
 pub fn process_mint_nft(
-  program_id: &Pubkey,
+  _program_id: &Pubkey,
   accounts: &[AccountInfo],
 ) -> ProgramResult {
   let account_iter = &mut accounts.iter();
@@ -305,7 +311,7 @@ pub fn process_lock_nft (
   let kind = Metadata::<ArtNft>::get_kind(metadata_account_info)?;
 
   match kind {
-    Kind::RoyaltiyResaleArt => {
+    Kind::RoyaltyArt => {
       artNft::lock_nft(
         Metadata::<ArtNft>::from_account_info(metadata_account_info)?, 
         metadata_account_info, 
@@ -333,8 +339,7 @@ pub fn process_add_royalty (
   assert_owned_by(metadata_account_info, program_id)?;
 
   match Metadata::<ArtNft>::get_kind(metadata_account_info)? {
-    Kind::RoyaltiyResaleArt => artNft::add_royalty(
-      program_id, 
+    Kind::RoyaltyArt => artNft::add_royalty(
       accounts, 
       Metadata::<ArtNft>::from_account_info(metadata_account_info)?, 
       data
@@ -342,6 +347,57 @@ pub fn process_add_royalty (
     Kind::Uninitialized => {
       msg!("This NFT Kind has no royalties");
       return Err(ReeMetaError::InvalidNFTKind.into())
+    }
+  }
+
+}
+
+// TODO: change to tokens
+pub fn process_nft_transaction (
+  program_id: &Pubkey,
+  accounts: &[AccountInfo],
+  data: NftTransactionArgs
+) -> ProgramResult {
+  let account_iter = &mut accounts.iter();
+  let metadata_account_info = next_account_info(account_iter)?;
+
+  assert_owned_by(metadata_account_info, program_id)?;
+
+  let kind = Metadata::<ArtNft>::get_kind(metadata_account_info)?;
+
+  match kind {
+    Kind::RoyaltyArt => {
+      artNft::nft_transaction(
+        accounts, 
+        Metadata::<ArtNft>::from_account_info(metadata_account_info)?, 
+        data
+      )
+    },
+    _ => {
+      // non Royalty transaction transfer full amount to target
+      let payer_account_info = next_account_info(account_iter)?;
+      let target_account_info = next_account_info(account_iter)?;
+      let system_info = next_account_info(account_iter)?;
+
+      if *system_info.key != system_program::ID {
+        msg!("Invalid system account");
+        return Err(ReeMetaError::InvalidInstruction.into())
+      }
+
+      invoke(
+        &system_instruction::transfer(
+          payer_account_info.key, 
+          target_account_info.key,
+          data.amount
+        ),
+        &[
+          payer_account_info.clone(),
+          target_account_info.clone(),
+          system_info.clone()
+        ]
+      )?;
+
+      Ok(())
     }
   }
 

@@ -29,6 +29,8 @@ pub enum ReeMetaError {
   NoRoyalties,
   #[error("Insufficient Share")]
   InsufficientShare,
+  #[error("Invalid Royalty Address")]
+  RoyaltyAddressInvalid,
 }
 
 impl PrintProgramError for ReeMetaError {

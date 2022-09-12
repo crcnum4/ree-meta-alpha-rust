@@ -3,16 +3,21 @@ use crate::{
   state::{
     Metadata,
     ArtNft, Royalty,
-  }, instruction::AddRoyaltyArgs,
+  }, instruction::{AddRoyaltyArgs, NftTransactionArgs},
 };
 use borsh::BorshSerialize;
 
 use solana_program::{
   account_info::{AccountInfo, next_account_info},
   entrypoint::ProgramResult,
-  pubkey::Pubkey, system_program,
-  sysvar::{rent::{Rent, ID as RENT_ID}, Sysvar}, program::invoke, system_instruction,
+  system_program,
+  sysvar::{rent::{Rent, ID as RENT_ID}, Sysvar}, 
+  program::invoke, 
+  system_instruction, 
+  msg,
 };
+
+use percentage::Percentage;
 
 pub fn lock_nft(
   mut metadata: Metadata<ArtNft>,
@@ -39,7 +44,6 @@ pub fn lock_nft(
 }
 
 pub fn add_royalty(
-  program_id: &Pubkey,
   accounts: &[AccountInfo],
   mut metadata: Metadata<ArtNft>,
   data: AddRoyaltyArgs,
@@ -68,9 +72,9 @@ pub fn add_royalty(
     return Err(ReeMetaError::InvalidUpdateAuthority.into())
   }
 
-  let mut artNft = metadata.data.clone();
+  let mut art_nft = metadata.data.clone();
 
-  if artNft.royalties.len() == 0 || artNft.royalties[0].share < data.share {
+  if art_nft.royalties.len() == 0 || art_nft.royalties[0].share < data.share {
     return Err(ReeMetaError::InsufficientShare.into())
   }
 
@@ -81,10 +85,10 @@ pub fn add_royalty(
     verified: true,
   };
 
-  artNft.royalties[0].share = artNft.royalties[0].share - data.share;
-  artNft.royalties.push(new_royalty);
+  art_nft.royalties[0].share = art_nft.royalties[0].share - data.share;
+  art_nft.royalties.push(new_royalty);
 
-  metadata.data = artNft;
+  metadata.data = art_nft;
 
   // calculate new rent
   let rent = &Rent::from_account_info(rent_info)?;
@@ -109,9 +113,99 @@ pub fn add_royalty(
     )?;
   }
 
-  metadata_account_info.realloc(metadata.clone().size(), false);
+  metadata_account_info.realloc(metadata.clone().size(), false)?;
 
   metadata.serialize(&mut *metadata_account_info.data.borrow_mut())?;
+
+  Ok(())
+}
+
+pub fn nft_transaction (
+  // program_id: &Pubkey,
+  accounts: &[AccountInfo],
+  mut metadata: Metadata<ArtNft>,
+  data: NftTransactionArgs,
+) -> ProgramResult {
+  let account_iter = &mut accounts.iter();
+  let metadata_account_info = next_account_info(account_iter)?;
+  let payer_account_info = next_account_info(account_iter)?;
+  let target_account_info = next_account_info(account_iter)?;
+  let system_info = next_account_info(account_iter)?;
+
+  if *system_info.key != system_program::ID {
+    msg!("Invalid system account");
+    return Err(ReeMetaError::InvalidInstruction.into())
+  }
+
+  // check the initial sale 
+  // non mut vars can be set once then unchanged.
+  let royalty_payout: u64;
+  let mut target_payout: u64 = 0;
+
+  // TODO: add to the instruction a royalty flag so non initial sales can go full royalty;
+  if !metadata.data.initial_sale {
+    // initial sale has not been done yet all goes to royalties
+    royalty_payout = data.amount;
+  } else {
+    // initial sale occured this is a secondary market transaction
+    let percentage_rate = Percentage::from(metadata.data.resale_fee);
+    royalty_payout = percentage_rate.apply_to(data.amount);
+    target_payout = data.amount - royalty_payout;
+  }
+
+  // for v1 the remaining accounts much be in the same order for the accounts
+  let mut current_payout = 0;
+  for (i, royalty) in metadata.data.royalties.iter().enumerate() {
+    let royalty_account_info = next_account_info(account_iter)?;
+    if royalty.address != *royalty_account_info.key {
+      return Err(ReeMetaError::RoyaltyAddressInvalid.into())
+    }
+    let mut amount: u64 = 0;
+    if i == metadata.data.royalties.len() - 1 {
+      // make sure the last royalty gets the remaining payout to ensure full transfer of funds
+      amount = royalty_payout - current_payout;
+    } else {
+      let percentage = Percentage::from(royalty.share);
+      let amount = percentage.apply_to(royalty_payout);
+      current_payout += amount;
+    }
+
+    // pay amount to this user
+    invoke(
+      &system_instruction::transfer(
+        payer_account_info.key, 
+        royalty_account_info.key, 
+        amount
+      ), 
+      &[
+        payer_account_info.clone(),
+        royalty_account_info.clone(),
+        system_info.clone()
+      ]
+    )?;
+  }
+
+  // recheck initial sale. 
+
+  if !metadata.data.initial_sale {
+    // initial sale all went to royalty. change initial sale to true
+    metadata.data.initial_sale = true;
+    metadata.serialize(&mut *metadata_account_info.data.borrow_mut())?;
+    return Ok(())
+  }
+
+  invoke(
+    &system_instruction::transfer(
+      payer_account_info.key, 
+      target_account_info.key,
+      target_payout
+    ),
+    &[
+      payer_account_info.clone(),
+      target_account_info.clone(),
+      system_info.clone()
+    ]
+  )?;
 
   Ok(())
 }

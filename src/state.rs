@@ -3,11 +3,8 @@ use solana_program::{
   account_info::AccountInfo,
   program_error::ProgramError,
   pubkey::Pubkey,
-  msg, stake::state::Meta
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use std::collections::HashMap;
-use core::any::Any;
 
 pub const PREFIX: &str = "ree-metadata";
 
@@ -85,13 +82,13 @@ impl ArtNft {
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug, Clone, Copy)]
 pub enum Kind {
   Uninitialized,
-  RoyaltiyResaleArt,
+  RoyaltyArt,
 }
 
 impl From<&u8> for Kind {
   fn from(orig: &u8) -> Self {
     match orig {
-      1 => Kind::RoyaltiyResaleArt,
+      1 => Kind::RoyaltyArt,
       _ => Kind::Uninitialized,
     }
   }
@@ -134,13 +131,13 @@ where
   T: MetadataData + BorshDeserialize + BorshSerialize + PartialEq + Clone
 {
   pub fn from_account_info(account_info: &AccountInfo) -> Result<Metadata<T>, ProgramError> {
-    let mut data = &account_info.data.borrow_mut();
+    let data = &account_info.data.borrow();
     let md: Metadata<T> = try_from_slice_unchecked(data)?;
     Ok(md)
   }
 
   pub fn get_kind(account_info: &AccountInfo) -> Result<Kind, ProgramError> {
-    let mut data = &account_info.data.borrow_mut();
+    let data = &account_info.data.borrow();
     Ok(Kind::from(&data[0]))
   }
   

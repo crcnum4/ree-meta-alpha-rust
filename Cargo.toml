@@ -1,6 +1,6 @@
 [package]
 name = "ree-meta"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "WTFPL"
 publish = false
@@ -17,6 +17,7 @@ percentage ="~0.1.0"
 
 [features]
 test-bpf = []
+no-entrypoint = []
 
 [dev-dependencies]
 assert_matches = "1.5.0"

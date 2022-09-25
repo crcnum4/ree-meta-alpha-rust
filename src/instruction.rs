@@ -196,3 +196,31 @@ pub fn mint_nft(
     data: ReeMetadataInstruction::MintNFT().try_to_vec().unwrap() 
   }
 }
+
+pub fn nft_funding_sol(
+  program_id: &Pubkey,
+  metadata_pda: &Pubkey,
+  payer: &Pubkey,
+  target: &Pubkey,
+  royalties: &[&Pubkey],
+  data: NftTransactionArgs,
+) -> Instruction {
+  let mut accounts = vec![
+    AccountMeta::new_readonly(*metadata_pda, false),
+    AccountMeta::new(*payer, true),
+    AccountMeta::new(*target, false),
+    AccountMeta::new(solana_program::system_program::id(), false)
+  ];
+  
+  for account in royalties.iter() {
+    accounts.push(
+      AccountMeta::new(**account, false)
+    );
+  }
+  
+  Instruction {
+    program_id: *program_id,
+    accounts,
+    data: ReeMetadataInstruction::NftTransaction((data)).try_to_vec().unwrap()
+  }
+}

@@ -58,16 +58,16 @@ pub enum ReeMetadataInstruction {
    * creates the metadata account data giving ownership to program and setting details
    * #[account(0), writable, name="metadata_account", desc="PDA of the new metadata account"]
    * #[account(1), writable, name="mint", desc="Mint of the token asset"]
-   * #[account(2), name="royalty_owner", desc="Original royalty holder that starts with 100% of the shares"]
+   * #[account(2), read, name="royalty_owner", desc="Original royalty holder that starts with 100% of the shares"]
    * #[account(3), signer, name="created_mint_authority", desc="Mint authority of the mint"]
    * #[account(4), read, name="nft_mint_authority", desc="Pubkey of who created the mint"]
    * #[account(5), read, name="new_nft_mint_authority", desc="pubkey of who can mint the 1 nft"]
-   * #[account(5), writable & signer, name="payer", desc="Payer of the transaction"]
-   * #[account(6), optional, name="update_authority", desc="if the metadata is mutable then this needs to be either the wallet of the updater or an NFT wallet" ]
-   * #[account(7), name="system_program", desc="System Program"]
-   * #[account(8), name="rent", "Rent info"]
-   * #[account(9), name="token_program", desc="Token Program"]
-   * #[account(10), read & optional, name="collection", description="collection key if part of collection"]
+   * #[account(6), writable & signer, name="payer", desc="Payer of the transaction"]
+   * #[account(7), optional, name="update_authority", desc="if the metadata is mutable then this needs to be either the wallet of the updater or an NFT wallet" ]
+   * #[account(8), name="system_program", desc="System Program"]
+   * #[account(9), name="rent", "Rent info"]
+   * #[account(10), name="token_program", desc="Token Program"]
+   * #[account(11), read & optional, name="collection", description="collection key if part of collection"]
    */
   CreateMetaData(CreateMetadataArgs),
   /* Mint one token of the given NFT and close the mint

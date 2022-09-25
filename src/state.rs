@@ -117,6 +117,8 @@ impl From<&u8> for UpdateType {
 pub struct Metadata<
   T: MetadataData + BorshDeserialize + BorshSerialize + PartialEq + Clone
 >{
+  // TODO:should add in a version field
+  pub version: u8,
   pub kind: Kind,
   pub mint: Pubkey,
   pub is_modifiable: bool,

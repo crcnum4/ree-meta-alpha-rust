@@ -135,7 +135,7 @@ pub fn process_create_metadata (
   let metadata_seeds = &[
     PREFIX.as_bytes(),
     program_id.as_ref(),
-    mint_account_info.key.as_ref(),
+    mint_account_info.key.as_ref()
   ];
 
   let (metadata_key, metadata_bump_seed) = Pubkey::find_program_address(metadata_seeds, program_id);
@@ -155,6 +155,7 @@ pub fn process_create_metadata (
   msg!("build Metadata");
 
   let mut metadata: Metadata<ArtNft> = Metadata{
+    version: 1,
     kind: metadata_data.kind,
     mint: *mint_account_info.key,
     data: art_nft,

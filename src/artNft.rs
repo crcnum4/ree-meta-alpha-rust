@@ -144,14 +144,18 @@ pub fn nft_transaction (
 
   // TODO: add to the instruction a royalty flag so non initial sales can go full royalty;
   if !metadata.data.initial_sale {
+    msg!("initial sale detected");
     // initial sale has not been done yet all goes to royalties
     royalty_payout = data.amount;
   } else {
+    msg!("not an initial sale");
     // initial sale occured this is a secondary market transaction
     let percentage_rate = Percentage::from(metadata.data.resale_fee);
     royalty_payout = percentage_rate.apply_to(data.amount);
     target_payout = data.amount - royalty_payout;
   }
+  msg!("amount was: {}", data.amount);
+  msg!("royalty_payout is: {}", royalty_payout);
 
   // for v1 the remaining accounts much be in the same order for the accounts
   let mut current_payout = 0;
@@ -166,9 +170,11 @@ pub fn nft_transaction (
       amount = royalty_payout - current_payout;
     } else {
       let percentage = Percentage::from(royalty.share);
-      let amount = percentage.apply_to(royalty_payout);
+      amount = percentage.apply_to(royalty_payout);
       current_payout += amount;
     }
+
+    msg!("royalty {} getting {} percentage totaling {} lamports", royalty_account_info.key.to_string(), royalty.share, amount);
 
     // pay amount to this user
     invoke(

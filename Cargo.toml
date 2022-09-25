@@ -1,6 +1,6 @@
 [package]
-name = "ree-nft-meta"
-version = "1.0.0"
+name = "ree-meta"
+version = "1.0.1"
 edition = "2021"
 license = "WTFPL"
 publish = false

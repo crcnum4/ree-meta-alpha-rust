@@ -3055,8 +3055,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ree-nft-meta"
-version = "1.0.0"
+name = "ree-meta"
+version = "1.0.1"
 dependencies = [
  "arrayref",
  "assert_matches",

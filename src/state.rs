@@ -142,6 +142,16 @@ where
     let data = &account_info.data.borrow();
     Ok(Kind::from(&data[0]))
   }
+
+  pub fn find_program_address(&self, program_id: &Pubkey, mint_id: &Pubkey) -> (Pubkey, u8) {
+    let seeds = &[
+      PREFIX.as_bytes(),
+      program_id.as_ref(),
+      mint_id.as_ref()
+    ];
+
+    return Pubkey::find_program_address(seeds, program_id);
+  }
   
   pub fn size(&self) -> usize {
     let mut size = 

@@ -202,7 +202,7 @@ pub fn nft_funding_sol(
   metadata_pda: &Pubkey,
   payer: &Pubkey,
   target: &Pubkey,
-  royalties: &[&Pubkey],
+  royalties: Vec<Pubkey>,
   data: NftTransactionArgs,
 ) -> Instruction {
   let mut accounts = vec![
@@ -214,7 +214,7 @@ pub fn nft_funding_sol(
   
   for account in royalties.iter() {
     accounts.push(
-      AccountMeta::new(**account, false)
+      AccountMeta::new(*account, false)
     );
   }
   

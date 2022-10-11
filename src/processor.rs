@@ -155,7 +155,7 @@ pub fn process_create_metadata (
   msg!("build Metadata");
 
   let mut metadata: Metadata<ArtNft> = Metadata{
-    version: 1,
+    // version: 1,
     kind: metadata_data.kind,
     mint: *mint_account_info.key,
     data: art_nft,

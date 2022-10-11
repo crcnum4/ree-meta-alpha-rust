@@ -209,7 +209,7 @@ pub fn nft_funding_sol(
     AccountMeta::new_readonly(*metadata_pda, false),
     AccountMeta::new(*payer, true),
     AccountMeta::new(*target, false),
-    AccountMeta::new(solana_program::system_program::id(), false)
+    AccountMeta::new_readonly(solana_program::system_program::id(), false)
   ];
   
   for account in royalties.iter() {

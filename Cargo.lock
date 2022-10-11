@@ -3056,7 +3056,7 @@ dependencies = [
 
 [[package]]
 name = "ree-meta"
-version = "1.0.5"
+version = "1.0.7"
 dependencies = [
  "arrayref",
  "assert_matches",

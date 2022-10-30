@@ -192,6 +192,7 @@ pub fn nft_transaction (
   }
 
   // recheck initial sale. 
+  msg!("update nft metatdata initial sale if needed");
 
   if !metadata.data.initial_sale {
     // initial sale all went to royalty. change initial sale to true
@@ -200,18 +201,21 @@ pub fn nft_transaction (
     return Ok(())
   }
 
-  invoke(
-    &system_instruction::transfer(
-      payer_account_info.key, 
-      target_account_info.key,
-      target_payout
-    ),
-    &[
-      payer_account_info.clone(),
-      target_account_info.clone(),
-      system_info.clone()
-    ]
-  )?;
+  msg!("payout to target {}", target_payout);
+  if target_payout > 0 {
+    invoke(
+      &system_instruction::transfer(
+        payer_account_info.key, 
+        target_account_info.key,
+        target_payout
+      ),
+      &[
+        payer_account_info.clone(),
+        target_account_info.clone(),
+        system_info.clone()
+      ]
+    )?;
+  }
 
   Ok(())
 }

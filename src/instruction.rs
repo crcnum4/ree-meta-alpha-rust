@@ -206,7 +206,7 @@ pub fn nft_funding_sol(
   data: NftTransactionArgs,
 ) -> Instruction {
   let mut accounts = vec![
-    AccountMeta::new_readonly(*metadata_pda, false),
+    AccountMeta::new(*metadata_pda, false),
     AccountMeta::new(*payer, true),
     AccountMeta::new(*target, false),
     AccountMeta::new_readonly(solana_program::system_program::id(), false)

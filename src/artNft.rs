@@ -198,6 +198,7 @@ pub fn nft_transaction (
     // initial sale all went to royalty. change initial sale to true
     metadata.data.initial_sale = true;
     metadata.serialize(&mut *metadata_account_info.data.borrow_mut())?;
+    msg!("done");
     return Ok(())
   }
 
